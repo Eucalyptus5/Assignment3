@@ -1,0 +1,94 @@
+@startuml
+
+skinparam classAttributeIconSize 0
+
+' Enums
+enum View {
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
+enum Theme {
+  DARK
+  LIGHT
+  PURPLE
+  ORANGE
+}
+
+class TimeZone {
+  - time_zone_id : int
+  - offset : int
+  - name : str
+  --
+  + set_offset(new_offset : int) : void
+}
+
+class UI {
+  - user_view : View
+  - theme : Theme
+  - time_zone : TimeZone
+  --
+  + change_view(new_view : View) : void
+  + change_theme(new_theme : Theme) : void
+  + change_time_zone(offset : int) : void
+}
+
+class Event {
+  - event_id : int
+  - start_time : datetime
+  - end_time : datetime
+  - name : str
+  - owned_by_user : int
+  - shared_with_users : list
+  --
+  + update_time_zone(offset : int) : void
+  + share_event(users : list) : void
+  + update(start_time: datetime, name: str, end_time: datetime) : void
+  + verify_user(username : str) : Event
+}
+
+class Calendar {
+  - calendar_id : int
+  - name : str
+  - private : bool
+  - time_zone : TimeZone
+  - events : list
+  - shared_with_users : list
+  - users : list
+  --
+  + update_time_zone(offset : int) : void
+  + add_event(start_time : datetime, name : str, end_time : datetime, owner_id : int) : Event
+  + delete_event(event_id : int) : void
+  + share_calendar(usernames : list) : void
+  + set_time_zone(offset : int) : void
+  + verify_user(username : str) : Calendar
+}
+
+class User {
+  - user_id : int
+  - user_name : str
+  - user_email : str
+  - calendars : list
+  - ui : UI
+  --
+  + create_calendar(name : str, private : bool) : Calendar
+  + view_calendar(cal_id : int) : Calendar
+  + view_event(cal_id : int, event_id : int) : Event
+  + change_view(new_view : View) : void
+  + change_theme(new_theme : Theme) : void
+  + change_time_zone(offset : int) : void
+  + add_event_to_calendar(cal_id : int, name : str, start_time : datetime, end_time : datetime) : Event
+}
+
+' Relationships
+UI "1" -- "1" View : uses
+UI "1" -- "1" Theme : uses
+UI "1" -- "1" TimeZone : uses
+
+Calendar "0..*" -- "1" Event
+User "1..*" -- "0..*" Calendar
+Calendar "0..*" -- "1..*" User : users
+
+@enduml
