@@ -1,17 +1,21 @@
 # calendar_app/main.py
-
 from datetime import datetime, timedelta
 from user import User
 from enums import View, Theme
 from timezone import TimeZone
+from user_manager import UserManager
+
+def parse_datetime(input_str: str, default=None):
+    if input_str.strip() == "":
+        return default
+    try:
+        return datetime.strptime(input_str, "%Y-%m-%d %H:%M")
+    except ValueError:
+        return None
 
 def main():
-    """
-    A simple terminal-based menu to manage Users, Calendars, and Events.
-    """
-    users = {}         # dictionary: user_id -> User
-    active_user = None # track which user is "logged in"
-    next_user_id = 1   # auto-increment for new users
+    user_manager = UserManager.get_instance()
+    active_user = None
 
     while True:
         print("\n===================================")
@@ -33,26 +37,25 @@ def main():
 
         choice = input("Enter choice: ").strip()
         if choice == '1':
-            # Create a new User
             name = input("Enter new user's name: ")
             email = input("Enter new user's email: ")
-            user = User(user_id=next_user_id, user_name=name, user_email=email)
-            users[next_user_id] = user
-            print(f"User created with ID={next_user_id}")
-            next_user_id += 1
+            uid = user_manager.generate_user_id()
+            user = User(user_id=uid, user_name=name, user_email=email)
+            user_manager.add_user(user)
+            print(f"User created with ID={uid}")
 
         elif choice == '2':
-            # Switch active user
-            if not users:
+            if not user_manager.users:
                 print("No users exist yet. Create a user first.")
                 continue
             print("Available user IDs:")
-            for uid in users:
-                print(f"  {uid} -> {users[uid].user_name}")
+            for uid in user_manager.users:
+                print(f"  {uid} -> {user_manager.users[uid].user_name}")
             try:
                 uid = int(input("Enter user ID to switch to: "))
-                if uid in users:
-                    active_user = users[uid]
+                user = user_manager.get_user_by_id(uid)
+                if user:
+                    active_user = user
                     print(f"Switched active user to '{active_user.user_name}'.")
                 else:
                     print("Invalid user ID.")
@@ -60,7 +63,6 @@ def main():
                 print("Invalid input.")
 
         elif choice == '3':
-            # Create a calendar for the active user
             if active_user is None:
                 print("No active user. Please switch or create a user first.")
                 continue
@@ -70,7 +72,6 @@ def main():
             print(f"Created calendar '{cal.name}' with ID={cal.calendar_id}")
 
         elif choice == '4':
-            # View calendars for the active user
             if active_user is None:
                 print("No active user. Please switch or create a user first.")
                 continue
@@ -83,7 +84,6 @@ def main():
                     print(f"  ID={c.calendar_id}, Name='{c.name}', {private_status}")
 
         elif choice == '5':
-            # Add an event to a calendar
             if active_user is None:
                 print("No active user.")
                 continue
@@ -92,23 +92,21 @@ def main():
                 continue
             try:
                 cal_id = int(input("Enter calendar ID to add event to: "))
-                cal = active_user.view_calendar(cal_id)
+                cal = active_user.get_calendar_by_id(cal_id)
                 if cal is None:
                     print("Could not access that calendar (not owned by this user).")
                     continue
                 event_name = input("Enter event name: ")
                 start_input = input("Enter start time (YYYY-MM-DD HH:MM) or press Enter for 'now': ")
-                if start_input.strip() == "":
-                    start_time = datetime.now()
-                else:
-                    start_time = datetime.strptime(start_input, "%Y-%m-%d %H:%M")
-                
+                start_time = parse_datetime(start_input, default=datetime.now())
+                if start_time is None:
+                    print("Invalid start time format.")
+                    continue
                 end_input = input("Enter end time (YYYY-MM-DD HH:MM) or press Enter for +1 hour: ")
-                if end_input.strip() == "":
-                    end_time = start_time + timedelta(hours=1)
-                else:
-                    end_time = datetime.strptime(end_input, "%Y-%m-%d %H:%M")
-
+                end_time = parse_datetime(end_input, default=start_time + timedelta(hours=1))
+                if end_time is None:
+                    print("Invalid end time format.")
+                    continue
                 evt = active_user.add_event_to_calendar(cal_id, event_name, start_time, end_time)
                 if evt is not None:
                     print(f"Event '{evt.name}' added (ID={evt.event_id}).")
@@ -118,7 +116,6 @@ def main():
                 print("Invalid input.")
 
         elif choice == '6':
-            # View events in a calendar
             if active_user is None:
                 print("No active user.")
                 continue
@@ -127,7 +124,7 @@ def main():
                 continue
             try:
                 cal_id = int(input("Enter calendar ID to view events: "))
-                cal = active_user.view_calendar(cal_id)
+                cal = active_user.get_calendar_by_id(cal_id)
                 if cal is None:
                     print("Could not access that calendar.")
                     continue
@@ -136,18 +133,14 @@ def main():
                 else:
                     print(f"Events in '{cal.name}':")
                     for e in cal.events:
-                        # Check if current user can actually view it
-                        # (We use user.view_event to see if we get None or the event)
                         if active_user.view_event(cal_id, e.event_id) is not None:
-                            print(f"  EventID={e.event_id}, Name='{e.name}', "
-                                  f"Start={e.start_time}, End={e.end_time}")
+                            print(f"  EventID={e.event_id}, Name='{e.name}', Start={e.start_time}, End={e.end_time}")
                         else:
                             print(f"  EventID={e.event_id} (not shared with you).")
             except ValueError:
                 print("Invalid input.")
 
         elif choice == '7':
-            # Share a calendar with another user
             if active_user is None:
                 print("No active user.")
                 continue
@@ -156,13 +149,12 @@ def main():
                 continue
             try:
                 cal_id = int(input("Enter calendar ID to share: "))
-                cal = active_user.view_calendar(cal_id)
+                cal = active_user.get_calendar_by_id(cal_id)
                 if cal is None:
                     print("Could not access that calendar.")
                     continue
-                # Let user specify the other user's name or ID
                 print("Available users to share with:")
-                for uid, usr in users.items():
+                for uid, usr in user_manager.users.items():
                     if usr != active_user:
                         print(f"  ID={uid}, Name='{usr.user_name}'")
                 share_list = input("Enter comma-separated user IDs to share with: ")
@@ -171,31 +163,24 @@ def main():
                 for s_id in share_ids:
                     try:
                         u_id = int(s_id)
-                        if u_id in users:
-                            share_user_names.append(users[u_id].user_name)
+                        if u_id in user_manager.users:
+                            share_user_names.append(user_manager.users[u_id].user_name)
                     except ValueError:
                         pass
-
                 if not share_user_names:
                     print("No valid user IDs found.")
                 else:
                     cal.share_calendar(share_user_names)
                     print(f"Calendar '{cal.name}' shared with {share_user_names}.")
-                    # Optionally also add the calendar to the other user's 'calendars' list,
-                    # so they can see it in "view_calendar"
                     for su in share_user_names:
-                        # find user by name
-                        for usr in users.values():
-                            if usr.user_name == su:
-                                # only add if not already in that user's list
-                                if cal not in usr.calendars:
-                                    usr.calendars.append(cal)
+                        for usr in user_manager.users.values():
+                            if usr.user_name == su and cal not in usr.calendars:
+                                usr.calendars.append(cal)
                     print("Calendar appended to the other user's calendars for demonstration.")
             except ValueError:
                 print("Invalid input.")
 
         elif choice == '8':
-            # Change UI settings
             if active_user is None:
                 print("No active user.")
                 continue
